@@ -18,10 +18,20 @@ class NOTWITHSTANDING_API ANwsCharacter : public ACharacter
 public:
 	ANwsCharacter();
 
+	class USkeletalMeshComponent* GetArmMesh() const { return ArmMesh; }
+
+	UFUNCTION(Server, Reliable)
+	void ServerPickUpWeapon(class ANwsWeapon* Weapon);
+
 protected:
+	virtual void PossessedBy(AController* NewController) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 private:
+	UFUNCTION(Client, Reliable)
+	void ClientInit();
+
 	void MoveForward(float AxisValue);
 	void MoveRight(float AxisValue);
 	void LookUp(float AxisValue);
@@ -35,6 +45,25 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerRunning(bool bInRunning);
+
+	void Interacting();
+	void StopInteracting();
+
+	void TryToInteract();
+	void CheckInteracting();
+
+	void Interact();
+	void BeginInteracting();
+	void EndInteracting();
+
+	UFUNCTION(Server, Reliable)
+	void ServerInteracting(class ANwsInteraction* Target, ANwsCharacter* Interactor, bool bBeginning);
+
+	UFUNCTION(Client, Reliable)
+	void ClientStopInteracting();
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropOffWeapon();
 
 private:
 	UPROPERTY(VisibleAnywhere)
@@ -52,4 +81,18 @@ private:
 	bool bUseFirstPersonView = true;
 	bool bCrouching = false;
 	bool bRunning = false;
+	bool bTryToInteract = false;
+	bool bInteracting = false;
+
+	FTimerHandle CheckInteractionTimerHandle;
+	FTimerHandle InteractionTimerHandle;
+
+	UPROPERTY(Replicated)
+	class ANwsInteraction* Interaction;
+
+	UPROPERTY(Replicated)
+	TArray<class ANwsWeapon*> Inventory;
+
+	UPROPERTY(Replicated)
+	uint8 InventoryIndex;
 };

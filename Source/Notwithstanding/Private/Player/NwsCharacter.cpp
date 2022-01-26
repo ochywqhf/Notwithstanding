@@ -1,4 +1,6 @@
 #include "Player/NwsCharacter.h"
+#include "Interaction/NwsInteraction.h"
+#include "Interaction/NwsWeapon.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -45,6 +47,27 @@ ANwsCharacter::ANwsCharacter()
 	GetCharacterMovement()->MaxWalkSpeed = 360.f;
 	GetCharacterMovement()->MaxWalkSpeedCrouched = 170.f;
 	GetCharacterMovement()->GetNavAgentPropertiesRef().bCanCrouch = true;
+
+	Inventory.SetNum(3);
+}
+
+void ANwsCharacter::ServerPickUpWeapon_Implementation(ANwsWeapon* Weapon)
+{
+	if (Weapon && Weapon->GetWeaponType() != ENwsWeaponType::None)
+	{
+		InventoryIndex = static_cast<uint8>(Weapon->GetWeaponType());
+		
+		ServerDropOffWeapon();
+		Weapon->SetOwner(this);
+		Inventory[InventoryIndex] = Weapon;
+	}
+}
+
+void ANwsCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	ClientInit();
 }
 
 void ANwsCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -65,6 +88,24 @@ void ANwsCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 
 	PlayerInputComponent->BindAction(TEXT("Run"), IE_Pressed, this, &ANwsCharacter::Running);
 	PlayerInputComponent->BindAction(TEXT("Run"), IE_Released, this, &ANwsCharacter::Running);
+
+	PlayerInputComponent->BindAction(TEXT("Interact"), IE_Pressed, this, &ANwsCharacter::Interacting);
+	PlayerInputComponent->BindAction(TEXT("Interact"), IE_Released, this, &ANwsCharacter::StopInteracting);
+}
+
+void ANwsCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ANwsCharacter, Interaction);
+	DOREPLIFETIME(ANwsCharacter, Inventory);
+	DOREPLIFETIME(ANwsCharacter, InventoryIndex);
+}
+
+void ANwsCharacter::ClientInit_Implementation()
+{
+	if (auto* World = GetWorld())
+		World->GetTimerManager().SetTimer(CheckInteractionTimerHandle, this, &ANwsCharacter::CheckInteracting, 0.1f, true);
 }
 
 void ANwsCharacter::MoveForward(float AxisValue)
@@ -146,4 +187,119 @@ void ANwsCharacter::CheckRunning(bool bInRunning)
 void ANwsCharacter::ServerRunning_Implementation(bool bInRunning)
 {
 	GetCharacterMovement()->MaxWalkSpeed = bInRunning ? 540.f : 360.f;
+}
+
+void ANwsCharacter::Interacting()
+{
+	bTryToInteract = true;
+
+	if (Interaction)
+		TryToInteract();
+}
+
+void ANwsCharacter::StopInteracting()
+{
+	bTryToInteract = false;
+
+	if (Interaction)
+		EndInteracting();
+}
+
+void ANwsCharacter::TryToInteract()
+{
+	if (!Interaction || !Interaction->TryToInteract())
+		return;
+
+	BeginInteracting();
+
+	if (auto* World = GetWorld())
+	{
+		World->GetTimerManager().PauseTimer(CheckInteractionTimerHandle);
+		Interaction->GetInteractionTime() ? World->GetTimerManager().SetTimer(InteractionTimerHandle, this, &ANwsCharacter::Interact, Interaction->GetInteractionTime()) : Interact();
+	}
+}
+
+void ANwsCharacter::CheckInteracting()
+{
+	if (bRunning)
+		Interaction = nullptr;
+
+	else if (auto* CameraManager = UGameplayStatics::GetPlayerCameraManager(this, 0))
+	{
+		FHitResult OutHit;
+		const auto& Start = CameraManager->GetCameraLocation() + (bUseFirstPersonView ? FVector(0.f) : CameraManager->GetActorForwardVector() * (CameraManager->GetCameraLocation() - GetActorLocation()).Size());
+
+		if (UKismetSystemLibrary::LineTraceSingle(this, Start, Start + CameraManager->GetActorForwardVector() * 300.f, ETraceTypeQuery::TraceTypeQuery1, false, TArray<AActor*>{}, EDrawDebugTrace::None, OutHit, true))
+		{
+			if (auto* Target = Cast<ANwsInteraction>(OutHit.GetActor()))
+			{
+				if (Target->TryToInteract())
+				{
+					Interaction = Target;
+
+					if (bTryToInteract)
+						TryToInteract();
+
+					return;
+				}
+			}
+		}
+
+		if (Interaction)
+			Interaction->EndHover();
+
+		EndInteracting();
+		Interaction = nullptr;
+	}
+}
+
+void ANwsCharacter::Interact()
+{
+	ServerInteracting(Interaction, this, false);
+
+	bTryToInteract = bInteracting = false;
+	Interaction = nullptr;
+
+	if (auto* World = GetWorld())
+		World->GetTimerManager().UnPauseTimer(CheckInteractionTimerHandle);
+}
+
+void ANwsCharacter::BeginInteracting()
+{
+	ServerInteracting(Interaction, this, true);
+
+	bTryToInteract = false;
+	bInteracting = true;
+}
+
+void ANwsCharacter::EndInteracting()
+{
+	bInteracting = false;
+
+	if (Interaction)
+		Interaction->EndInteracting();
+
+	if (auto* World = GetWorld())
+	{
+		World->GetTimerManager().PauseTimer(InteractionTimerHandle);
+		World->GetTimerManager().UnPauseTimer(CheckInteractionTimerHandle);
+	}
+}
+
+void ANwsCharacter::ServerInteracting_Implementation(ANwsInteraction* Target, ANwsCharacter* Interactor, bool bBeginning)
+{
+	if (Target && Interactor)
+		bBeginning ? Target->BeginInteracting(Interactor) : Target->Interact(Interactor);
+}
+
+void ANwsCharacter::ClientStopInteracting_Implementation()
+{
+	if (bInteracting)
+		EndInteracting();
+}
+
+void ANwsCharacter::ServerDropOffWeapon_Implementation()
+{
+	if (!Inventory[InventoryIndex])
+		return;
 }
