@@ -111,11 +111,13 @@ void ANwsCharacter::ClientInit_Implementation()
 void ANwsCharacter::MoveForward(float AxisValue)
 {
 	AddMovementInput(GetActorForwardVector(), AxisValue);
+	CheckRunning(!bCrouching && bRunning);
 }
 
 void ANwsCharacter::MoveRight(float AxisValue)
 {
 	AddMovementInput(GetActorRightVector(), AxisValue);
+	CheckRunning(!bCrouching && bRunning);
 }
 
 void ANwsCharacter::LookUp(float AxisValue)
@@ -141,8 +143,7 @@ void ANwsCharacter::TogglePerspective()
 
 void ANwsCharacter::Jumping()
 {
-	bCrouching ? UnCrouch() : Jump();
-	bCrouching = false;
+	bCrouching ? Crouching() : Jump();
 }
 
 void ANwsCharacter::Crouching()
@@ -152,9 +153,6 @@ void ANwsCharacter::Crouching()
 
 	bCrouching = !bCrouching;
 	bCrouching ? Crouch() : UnCrouch();
-
-	if (bRunning)
-		CheckRunning(!bCrouching);
 }
 
 void ANwsCharacter::Running()
@@ -166,15 +164,14 @@ void ANwsCharacter::Running()
 		bCrouching = false;
 		UnCrouch();
 	}
-
-	CheckRunning(bRunning);
 }
 
 void ANwsCharacter::CheckRunning(bool bInRunning)
 {
+	bInRunning = bInRunning && GetVelocity().Size() > 0.f;
 	uint8 RunningShake = static_cast<uint8>(ENwsCameraShakeType::Run);
 	GetCharacterMovement()->MaxWalkSpeed = bInRunning ? 540.f : 360.f;
-
+	
 	if (UGameplayStatics::GetPlayerCameraManager(this, 0) && CameraShakeClasses[RunningShake])
 	{
 		auto* CameraManager = UGameplayStatics::GetPlayerCameraManager(this, 0);
@@ -207,7 +204,7 @@ void ANwsCharacter::StopInteracting()
 
 void ANwsCharacter::TryToInteract()
 {
-	if (!Interaction || !Interaction->TryToInteract())
+	if (!Interaction || !Interaction->CanBeInteracted())
 		return;
 
 	BeginInteracting();
@@ -233,7 +230,7 @@ void ANwsCharacter::CheckInteracting()
 		{
 			if (auto* Target = Cast<ANwsInteraction>(OutHit.GetActor()))
 			{
-				if (Target->TryToInteract())
+				if (Target->CanBeInteracted())
 				{
 					Interaction = Target;
 
