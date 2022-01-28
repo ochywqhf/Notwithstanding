@@ -12,7 +12,7 @@ class NOTWITHSTANDING_API ANwsInteraction : public AActor
 public:	
 	ANwsInteraction();
 
-	bool TryToInteract() const { return bTryToInteract; }
+	bool CanBeInteracted() const { return bCanBeInteracted; }
 	float GetInteractionTime() const { return InteractionTime; }
 	const FString& GetDescription() const { return Description; }
 	const class UTexture2D* GetIcon() const { return Icon; }
@@ -26,8 +26,11 @@ public:
 	virtual void EndInteracting() {}
 
 protected:
-	UPROPERTY(EditDefaultsOnly)
-	bool bTryToInteract = true;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+protected:
+	UPROPERTY(Replicated, EditDefaultsOnly)
+	bool bCanBeInteracted = true;
 
 	UPROPERTY(EditDefaultsOnly)
 	float InteractionTime;
