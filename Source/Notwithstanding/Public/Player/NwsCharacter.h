@@ -38,6 +38,10 @@ private:
 	void Turn(float AxisValue);
 
 	void TogglePerspective();
+
+	UFUNCTION(Server, Reliable)
+	void ServerTogglePerspective(bool bInUsingFirstPersonView);
+
 	void Jumping();
 	void Crouching();
 	void Running();
@@ -78,7 +82,9 @@ private:
 	UPROPERTY(EditDefaultsOnly)
 	TArray<TSubclassOf<class UCameraShakeBase>> CameraShakeClasses;
 
-	bool bUseFirstPersonView = true;
+	UPROPERTY(Replicated)
+	bool bUsingFirstPersonView = true;
+
 	bool bCrouching = false;
 	bool bRunning = false;
 	bool bTryToInteract = false;

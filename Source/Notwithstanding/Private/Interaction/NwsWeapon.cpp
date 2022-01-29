@@ -35,19 +35,28 @@ void ANwsWeapon::ClientTogglePerspective_Implementation(bool bInUsingFirstPerson
 
 void ANwsWeapon::SetOwner(AActor* NewOwner)
 {
-	if (auto* Interactor = Cast<ANwsCharacter>(NewOwner))
+	if (auto* Interactor = Cast<ANwsCharacter>(NewOwner ? NewOwner : GetOwner()))
 	{
 		Super::SetOwner(NewOwner);
 
-		bCanBeInteracted = false;
+		bCanBeInteracted = !NewOwner;
 
-		Mesh->SetSimulatePhysics(false);
-		Mesh->SetCollisionProfileName(TEXT("WeaponPicked"));
-		Mesh->CastShadow = false;
-		Mesh->AttachToComponent(Interactor->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("hand_r"));
-		
-		ArmMesh->SetSkeletalMesh(Mesh->SkeletalMesh);
-		ArmMesh->AttachToComponent(Interactor->GetArmMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("hand_r"));
+		Mesh->SetSimulatePhysics(!NewOwner);
+		Mesh->SetCollisionProfileName(NewOwner ? TEXT("WeaponPicked") : TEXT("WeaponDropped"));
+		Mesh->CastShadow = !NewOwner;
+
+		ArmMesh->SetSkeletalMesh(NewOwner ? Mesh->SkeletalMesh : nullptr);
+
+		if (NewOwner)
+		{
+			Mesh->AttachToComponent(Interactor->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("hand_r"));
+			ArmMesh->AttachToComponent(Interactor->GetArmMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("hand_r"));
+		}
+		else
+		{
+			Mesh->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+			ArmMesh->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+		}
 	}
 }
 

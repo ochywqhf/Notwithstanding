@@ -59,6 +59,7 @@ void ANwsCharacter::ServerPickUpWeapon_Implementation(ANwsWeapon* Weapon)
 		
 		ServerDropOffWeapon();
 		Weapon->SetOwner(this);
+		Weapon->ClientTogglePerspective(bUsingFirstPersonView);
 		Inventory[InventoryIndex] = Weapon;
 	}
 }
@@ -91,12 +92,15 @@ void ANwsCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 
 	PlayerInputComponent->BindAction(TEXT("Interact"), IE_Pressed, this, &ANwsCharacter::Interacting);
 	PlayerInputComponent->BindAction(TEXT("Interact"), IE_Released, this, &ANwsCharacter::StopInteracting);
+
+	PlayerInputComponent->BindAction(TEXT("DropOffWeapon"), IE_Pressed, this, &ANwsCharacter::ServerDropOffWeapon);
 }
 
 void ANwsCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+	DOREPLIFETIME(ANwsCharacter, bUsingFirstPersonView);
 	DOREPLIFETIME(ANwsCharacter, Interaction);
 	DOREPLIFETIME(ANwsCharacter, Inventory);
 	DOREPLIFETIME(ANwsCharacter, InventoryIndex);
@@ -132,13 +136,22 @@ void ANwsCharacter::Turn(float AxisValue)
 
 void ANwsCharacter::TogglePerspective()
 {
-	bUseFirstPersonView = !bUseFirstPersonView;
+	bUsingFirstPersonView = !bUsingFirstPersonView;
+	ServerTogglePerspective(bUsingFirstPersonView);
 
-	GetMesh()->SetOwnerNoSee(bUseFirstPersonView);
-	ArmMesh->SetVisibility(bUseFirstPersonView);
+	GetMesh()->SetOwnerNoSee(bUsingFirstPersonView);
+	ArmMesh->SetVisibility(bUsingFirstPersonView);
 
-	SpringArm->TargetArmLength = bUseFirstPersonView ? 0.f : 200.f;
-	SpringArm->SetRelativeLocation(FVector(20.f, (bUseFirstPersonView ? 0.f : 35.f), 70.f));
+	SpringArm->TargetArmLength = bUsingFirstPersonView ? 0.f : 200.f;
+	SpringArm->SetRelativeLocation(FVector(20.f, (bUsingFirstPersonView ? 0.f : 35.f), 70.f));
+}
+
+void ANwsCharacter::ServerTogglePerspective_Implementation(bool bInUsingFirstPersonView)
+{
+	bUsingFirstPersonView = bInUsingFirstPersonView;
+	
+	if (auto* Weapon = Inventory[InventoryIndex])
+		Weapon->ClientTogglePerspective(bUsingFirstPersonView);
 }
 
 void ANwsCharacter::Jumping()
@@ -224,7 +237,7 @@ void ANwsCharacter::CheckInteracting()
 	else if (auto* CameraManager = UGameplayStatics::GetPlayerCameraManager(this, 0))
 	{
 		FHitResult OutHit;
-		const auto& Start = CameraManager->GetCameraLocation() + (bUseFirstPersonView ? FVector(0.f) : CameraManager->GetActorForwardVector() * (CameraManager->GetCameraLocation() - GetActorLocation()).Size());
+		const auto& Start = CameraManager->GetCameraLocation() + (bUsingFirstPersonView ? FVector(0.f) : CameraManager->GetActorForwardVector() * (CameraManager->GetCameraLocation() - GetActorLocation()).Size());
 
 		if (UKismetSystemLibrary::LineTraceSingle(this, Start, Start + CameraManager->GetActorForwardVector() * 300.f, ETraceTypeQuery::TraceTypeQuery1, false, TArray<AActor*>{}, EDrawDebugTrace::None, OutHit, true))
 		{
@@ -299,4 +312,8 @@ void ANwsCharacter::ServerDropOffWeapon_Implementation()
 {
 	if (!Inventory[InventoryIndex])
 		return;
+
+	Inventory[InventoryIndex]->ClientTogglePerspective(false);
+	Inventory[InventoryIndex]->SetOwner(nullptr);
+	Inventory[InventoryIndex] = nullptr;
 }
